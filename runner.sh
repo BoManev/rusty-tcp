@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 CARGO_TARGET_DIR=./target
 
@@ -9,5 +9,5 @@ pid=$!
 sudo ip addr add 192.168.0.1/24 dev tun0
 sudo ip link set up dev tun0
 
-ping -I tun0 192.168.0.2
+trap "kill $pid" INT TERM
 wait $pid
