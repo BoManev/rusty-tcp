@@ -1,15 +1,16 @@
 use std::io;
 
-enum Protocol {
+enum EthProtocol {
     IPv4,
+    #[allow(unused)]
     IPv6,
 }
 
-impl From<Protocol> for u16 {
-    fn from(value: Protocol) -> Self {
+impl From<EthProtocol> for u16 {
+    fn from(value: EthProtocol) -> Self {
         match value {
-            Protocol::IPv4 => 0x0800,
-            Protocol::IPv6 => 0x86dd,
+            EthProtocol::IPv4 => 0x0800,
+            EthProtocol::IPv6 => 0x86dd,
         }
     }
 }
@@ -20,18 +21,29 @@ fn main() -> io::Result<()> {
     loop {
         let nbytes = nic.recv(&mut buf[..])?;
         // TUN/TAP 3.2 Frame format
-        let flags = u16::from_be_bytes([buf[0], buf[1]]);
-        let proto = u16::from_be_bytes([buf[2], buf[3]]);
-        if proto != Protocol::IPv4.into() {
+        let eth_flags = u16::from_be_bytes([buf[0], buf[1]]);
+        let eth_proto = u16::from_be_bytes([buf[2], buf[3]]);
+        if eth_proto != EthProtocol::IPv4.into() {
             continue;
         }
-        eprintln!(
-            "read {} bytes (flags: {:x}, proto: {:x}, payload {:x?})",
-            nbytes - 4,
-            flags,
-            proto,
-            &buf[4..nbytes]
-        );
+
+        match etherparse::Ipv4HeaderSlice::from_slice(&buf[4..nbytes]) {
+            Ok(p) => {
+                let src = p.source_addr();
+                let dst = p.destination_addr();
+                let proto = p.protocol();
+                eprintln!(
+                    "{} -> {} {}b of protocol {}",
+                    src,
+                    dst,
+                    p.payload_len(),
+                    proto,
+                );
+            }
+            Err(e) => {
+                eprintln!("Failed to parse packet {:?}", e);
+            }
+        }
     }
     Ok(())
 }
