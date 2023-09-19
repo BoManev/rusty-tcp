@@ -1,7 +1,13 @@
+mod net;
+mod tcp;
+
+use net::{EthProtocol, IPv4Protocol};
+use std::collections::HashMap;
 use std::io;
 
 fn main() -> io::Result<()> {
     let nic = tun_tap::Iface::new("tun0", tun_tap::Mode::Tun)?;
+    let mut connections: HashMap<tcp::Connection, tcp::State> = HashMap::default();
     let mut buf = [0u8; 1504];
     loop {
         let nbytes = nic.recv(&mut buf[..])?;
@@ -13,23 +19,25 @@ fn main() -> io::Result<()> {
         }
 
         match etherparse::Ipv4HeaderSlice::from_slice(&buf[4..nbytes]) {
-            Ok(p) => {
-                let src = p.source_addr();
-                let dst = p.destination_addr();
-                let proto = p.protocol();
-                if proto != IPv4Protocol::TCP.into() {
+            Ok(ip_header) => {
+                let src = ip_header.source_addr();
+                let dst = ip_header.destination_addr();
+                if ip_header.protocol() != IPv4Protocol::TCP.into() {
                     continue;
                 }
 
-                match etherparse::TcpHeaderSlice::from_slice(&buf[4 + p.slice().len()..]) {
-                    Ok(p) => {
-                        eprintln!(
-                            "{} -> {}:{} {}b TCP",
-                            src,
-                            dst,
-                            p.destination_port(),
-                            p.slice().len(),
-                        );
+                match etherparse::TcpHeaderSlice::from_slice(
+                    &buf[4 + ip_header.slice().len()..nbytes],
+                ) {
+                    Ok(tcp_header) => {
+                        let payload = 4 + ip_header.slice().len() + tcp_header.slice().len();
+                        connections
+                            .entry(tcp::Connection {
+                                src: (src, tcp_header.source_port()),
+                                dst: (dst, tcp_header.destination_port()),
+                            })
+                            .or_default()
+                            .on_packet(ip_header, tcp_header, &buf[payload..nbytes]);
                     }
                     Err(e) => {
                         eprintln!("Failed to parse TCP packet {:?}", e);
@@ -39,36 +47,6 @@ fn main() -> io::Result<()> {
             Err(e) => {
                 eprintln!("Failed to parse IPv4 packet {:?}", e);
             }
-        }
-    }
-}
-
-enum EthProtocol {
-    IPv4,
-    #[allow(unused)]
-    IPv6,
-}
-
-impl From<EthProtocol> for u16 {
-    fn from(value: EthProtocol) -> Self {
-        match value {
-            EthProtocol::IPv4 => 0x0800,
-            EthProtocol::IPv6 => 0x86dd,
-        }
-    }
-}
-
-enum IPv4Protocol {
-    TCP,
-    #[allow(unused)]
-    ICMP,
-}
-
-impl From<IPv4Protocol> for u8 {
-    fn from(value: IPv4Protocol) -> Self {
-        match value {
-            IPv4Protocol::ICMP => 1,
-            IPv4Protocol::TCP => 6,
         }
     }
 }
