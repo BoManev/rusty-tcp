@@ -12,18 +12,3 @@ impl From<EthProtocol> for u16 {
         }
     }
 }
-
-pub enum IPv4Protocol {
-    TCP,
-    #[allow(unused)]
-    ICMP,
-}
-
-impl From<IPv4Protocol> for u8 {
-    fn from(value: IPv4Protocol) -> Self {
-        match value {
-            IPv4Protocol::ICMP => 1,
-            IPv4Protocol::TCP => 6,
-        }
-    }
-}
